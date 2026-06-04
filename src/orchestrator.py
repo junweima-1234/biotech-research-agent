@@ -1,0 +1,153 @@
+"""Main Orchestrator for Biotech Research Agent"""
+
+import asyncio
+import logging
+import json
+from typing import Dict, Any, Optional
+from datetime import datetime
+
+from src.workers import (
+    DiseaseWorker,
+    DrugProfileWorker,
+    CommercializationWorker,
+    ValuationWorker,
+    SynthesisWorker
+)
+from src.schemas.models import ResearchReport
+
+logger = logging.getLogger(__name__)
+
+
+class BiotechResearchOrchestrator:
+    """Main orchestrator coordinating all 5 worker agents"""
+    
+    def __init__(self):
+        """Initialize all workers"""
+        self.disease_worker = DiseaseWorker()
+        self.clinical_worker = DrugProfileWorker()
+        self.commercial_worker = CommercializationWorker()
+        self.valuation_worker = ValuationWorker()
+        self.synthesis_worker = SynthesisWorker()
+        
+        logger.info("✅ Orchestrator initialized with all 5 workers")
+    
+    async def analyze(self, ticker: str, company_name: str) -> ResearchReport:
+        """Execute complete biotech research analysis"""
+        input_data = {"ticker": ticker, "company_name": company_name}
+        
+        logger.info(f"🚀 Starting analysis for {company_name} ({ticker})")
+        logger.info("=" * 60)
+        
+        try:
+            logger.info("⚡ Executing Workers 1-4 in parallel...")
+            
+            disease, clinical, commercial, valuation = await asyncio.gather(
+                self.disease_worker.execute(input_data),
+                self.clinical_worker.execute(input_data),
+                self.commercial_worker.execute(input_data),
+                self.valuation_worker.execute(input_data),
+                return_exceptions=True
+            )
+            
+            logger.info("📊 Executing Worker 5 (Synthesis)...")
+            
+            synthesis_input = {
+                "disease": disease if not isinstance(disease, Exception) else None,
+                "clinical": clinical if not isinstance(clinical, Exception) else None,
+                "commercial": commercial if not isinstance(commercial, Exception) else None,
+                "valuation": valuation if not isinstance(valuation, Exception) else None,
+                "ticker": ticker,
+                "company_name": company_name
+            }
+            
+            report = await self.synthesis_worker.execute(synthesis_input)
+            
+            logger.info("=" * 60)
+            logger.info(f"✅ Analysis Complete for {company_name} ({ticker})")
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"❌ Orchestrator Error: {e}")
+            raise
+    
+    def format_report_markdown(self, report: ResearchReport) -> str:
+        """Format ResearchReport as markdown"""
+        md = f"""# Investment Research Report: {report.company_name} ({report.ticker})
+
+**Report Date:** {report.report_date.strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+## Executive Summary
+
+{report.executive_summary or 'N/A'}
+
+---
+
+## 1. Disease Biology Analysis
+
+**Target Disease:** {report.disease_analysis.target_disease if report.disease_analysis else 'N/A'}
+
+**Mechanism of Action:** {report.disease_analysis.mechanism_of_action if report.disease_analysis else 'N/A'}
+
+**Epidemiology:** {report.disease_analysis.epidemiology if report.disease_analysis else 'N/A'}
+
+**Unmet Medical Needs:** {report.disease_analysis.unmet_medical_needs if report.disease_analysis else 'N/A'}
+
+**Standard of Care:** {report.disease_analysis.standard_of_care if report.disease_analysis else 'N/A'}
+
+---
+
+## 2. Clinical Data & Pipeline
+
+**Pipeline Stage:** {report.clinical_data.pipeline_stage if report.clinical_data else 'N/A'}
+
+**Indications:** {', '.join(report.clinical_data.indications) if report.clinical_data and report.clinical_data.indications else 'N/A'}
+
+**Safety Profile:** {report.clinical_data.safety_profile if report.clinical_data else 'N/A'}
+
+---
+
+## 3. Competitive Landscape
+
+**Addressable Market Size:** {report.competitive_landscape.addressable_market_size if report.competitive_landscape else 'N/A'}
+
+**Reimbursement Status:** {report.competitive_landscape.reimbursement_status if report.competitive_landscape else 'N/A'}
+
+---
+
+## 4. Valuation Framework
+
+**Peak Sales Estimate:** {report.valuation_framework.peak_sales_estimate if report.valuation_framework else 'N/A'}
+
+**Risk-Adjusted NPV:** {report.valuation_framework.risk_adjusted_npv if report.valuation_framework else 'N/A'}
+
+---
+
+## 5. Investment Thesis
+
+**Variant Perception:**
+
+{report.investment_thesis.variant_perception if report.investment_thesis else 'N/A'}
+
+**Key Investment Highlights:**
+{self._format_list(report.investment_thesis.key_investment_highlights) if report.investment_thesis else 'N/A'}
+
+**Key Risks:**
+{self._format_list(report.investment_thesis.key_risks) if report.investment_thesis else 'N/A'}
+
+**Recommendation:** {report.investment_thesis.recommendation if report.investment_thesis else 'N/A'}
+
+---
+
+*Report generated by Biotech Research Agent v0.1.0*
+"""
+        return md
+    
+    @staticmethod
+    def _format_list(items: list) -> str:
+        """Format list items for markdown"""
+        if not items:
+            return "N/A"
+        return "\n".join([f"- {item}" for item in items])
